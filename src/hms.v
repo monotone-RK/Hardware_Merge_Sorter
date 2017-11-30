@@ -142,12 +142,99 @@ module SORT_LOGIC #(parameter                       E_LOG = 2,
     end
   endgenerate
 
-  // output
+  // Output
   assign DOT   = selected_records;
   assign DOTEN = dinen_b;
   
 endmodule
 
 
+/***** An E-record merge network                                          *****/
+/******************************************************************************/
+module MERGE_NETWORK #(parameter                       E_LOG = 2,
+                       parameter                       DATW  = 64,
+                       parameter                       KEYW  = 32)
+                      (input  wire                     CLK,
+                       input  wire                     RST,
+                       input  wire                     STALL,
+                       input  wire [(DATW<<E_LOG)-1:0] DIN,
+                       input  wire                     DINEN,
+                       output wire [(DATW<<E_LOG)-1:0] DOT,
+                       output wire                     DOTEN);
+
+  genvar i;
+  generate
+    for (i=0; i<(1<<E_LOG)-1; i=i+1) begin: sort_logics
+      wire [(DATW<<E_LOG)-1:0] din;
+      wire                     dinen;
+      wire [(DATW<<E_LOG)-1:0] dot;
+      wire                     doten;
+      SORT_LOGIC #(E_LOG, DATW, KEYW)
+      sort_logic(CLK, RST, STALL, din, dinen, dot, doten);
+    end
+  endgenerate
+
+  generate
+    for (i=0; i<(1<<E_LOG)-1; i=i+1) begin: connection
+      if (i == 0) begin
+        assign sort_logics[0].din   = DIN;
+        assign sort_logics[0].dinen = DINEN;
+      end else begin
+        assign sort_logics[i].din   = sort_logics[i-1].dot;
+        assign sort_logics[i].dinen = sort_logics[i-1].doten;
+      end
+    end
+  endgenerate
+
+  // Output
+  assign DOT   = sort_logics[(1<<E_LOG)-2].dot;
+  assign DOTEN = sort_logics[(1<<E_LOG)-2].doten;
   
+endmodule
+  
+
+/***** An SRL-based FIFO                                                  *****/
+/******************************************************************************/
+module SRL_FIFO #(parameter                    FIFO_SIZE  = 4,   // size in log scale, 4 for 16 entry
+                  parameter                    FIFO_WIDTH = 64)  // fifo width in bit
+                 (input  wire                  CLK,
+                  input  wire                  RST,
+                  input  wire                  enq,
+                  input  wire                  deq,
+                  input  wire [FIFO_WIDTH-1:0] din,
+                  output wire [FIFO_WIDTH-1:0] dot,
+                  output wire                  emp,
+                  output wire                  full,
+                  output reg  [FIFO_SIZE:0]    cnt);
+
+  reg  [FIFO_SIZE-1:0]  head;
+  reg  [FIFO_WIDTH-1:0] mem [(1<<FIFO_SIZE)-1:0];
+  
+  assign emp  = (cnt==0);
+  assign full = (cnt==(1<<FIFO_SIZE));
+  assign dot  = mem[head];
+    
+  always @(posedge CLK) begin
+    if (RST) begin
+      cnt  <= 0;
+      head <= {(FIFO_SIZE){1'b1}};
+    end else begin
+      case ({enq, deq})
+        2'b01: begin cnt <= cnt - 1; head <= head - 1; end
+        2'b10: begin cnt <= cnt + 1; head <= head + 1; end
+      endcase
+    end
+  end
+
+  integer i;
+  always @(posedge CLK) begin
+    if (enq) begin
+      mem[0] <= din;
+      for (i=1; i<(1<<FIFO_SIZE); i=i+1) mem[i] <= mem[i-1];
+    end
+  end
+  
+endmodule
+
+
 `default_nettype wire
