@@ -106,7 +106,7 @@ module SORT_LOGIC #(parameter                       E_LOG = 2,
   endgenerate
   
   MUX2 #(DATW)
-  mux2(din_a[(DATW<<E_LOG)-1:(DATW<<E_LOG)-DATW], fb_buf, comp_rslts[(1<<E_LOG)-1], fb_record);
+  mux2(din_a[(DATW<<E_LOG)-1:(DATW<<E_LOG)-DATW], fb_buf, ~comp_rslts[(1<<E_LOG)-1], fb_record);
 
   always @(posedge CLK) begin
     if (RST) begin
@@ -121,7 +121,7 @@ module SORT_LOGIC #(parameter                       E_LOG = 2,
   reg  [(DATW+(DATW<<E_LOG))-1:0] din_b;    // pipeline register for E records
   reg                             dinen_b;  // pipeline register for control
   reg  [(1<<E_LOG)-1:0]           comp_rslts_buf;
-  wire [(DATW<<E_LOG)-1:0]        selected_records;
+  wire [(DATW<<E_LOG)-1:0]        remaining_records;
 
   always @(posedge CLK) if (!STALL) din_b <= {fb_buf, din_a};
   always @(posedge CLK) begin
@@ -134,16 +134,16 @@ module SORT_LOGIC #(parameter                       E_LOG = 2,
     for (i=0; i<(1<<E_LOG); i=i+1) begin: multiplexers
       if (i == 0) begin
         MUX2 #(DATW)
-        mux2(din_b[DATW-1:0], din_b[(DATW+(DATW<<E_LOG))-1:(DATW<<E_LOG)], comp_rslts_buf[0], selected_records[DATW-1:0]);
+        mux2(din_b[DATW-1:0], din_b[(DATW+(DATW<<E_LOG))-1:(DATW<<E_LOG)], comp_rslts_buf[0], remaining_records[DATW-1:0]);
       end else begin
         MUX3 #(DATW)
-        mux3(din_b[DATW*i-1:DATW*(i-1)], din_b[DATW*(i+1)-1:DATW*i], din_b[(DATW+(DATW<<E_LOG))-1:(DATW<<E_LOG)], comp_rslts_buf[i:i-1], selected_records[DATW*(i+1)-1:DATW*i]);
+        mux3(din_b[DATW*i-1:DATW*(i-1)], din_b[DATW*(i+1)-1:DATW*i], din_b[(DATW+(DATW<<E_LOG))-1:(DATW<<E_LOG)], comp_rslts_buf[i:i-1], remaining_records[DATW*(i+1)-1:DATW*i]);
       end
     end
   endgenerate
 
   // Output
-  assign DOT   = selected_records;
+  assign DOT   = remaining_records;
   assign DOTEN = dinen_b;
   
 endmodule

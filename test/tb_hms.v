@@ -6,7 +6,7 @@
   
 `include "hms.v"
 
-`define E_LOG  2
+`define E_LOG  5  // 1 ~ 5
 `define DATW  64
 `define KEYW  32
   
@@ -39,6 +39,11 @@ module tb_MERGE_NETWORK();
   wire [(`DATW<<`E_LOG)-1:0] merge_network_dot;
   wire                       merge_network_doten;
   
+  wire [(`DATW<<`E_LOG)-1:0] check_records;
+  reg                        check_first;
+  wire [`KEYW-1:0]           check_first_key = 1;
+  wire [(`DATW<<`E_LOG)-1:0] check_first_records;
+  
   assign fifo4odd_enq  = !fifo4odd_ful;
   assign fifo4even_enq = !fifo4even_ful;
 
@@ -67,8 +72,10 @@ module tb_MERGE_NETWORK();
     for (i=0; i<(1<<`E_LOG); i=i+1) begin: loop
       wire [`KEYW-1:0] init_keyodd  = 2 * i + 1;
       wire [`KEYW-1:0] init_keyeven = 2 * i + 2;
+      wire [`KEYW-1:0] chk_rslt_key = i + 2;
       reg  [`DATW-1:0] fifo4odd_initrecord;
       reg  [`DATW-1:0] fifo4even_initrecord;
+      reg  [`DATW-1:0] chk_rslt;
       always @(posedge CLK) begin
         if      (RST)          fifo4odd_initrecord <= {{(`DATW-`KEYW){1'b1}}, init_keyodd};
         else if (fifo4odd_enq) fifo4odd_initrecord <= fifo4odd_initrecord + (1<<(`E_LOG+1));
@@ -77,41 +84,59 @@ module tb_MERGE_NETWORK();
         if      (RST)           fifo4even_initrecord <= {{(`DATW-`KEYW){1'b1}}, init_keyeven};
         else if (fifo4even_enq) fifo4even_initrecord <= fifo4even_initrecord + (1<<(`E_LOG+1));
       end
+      always @(posedge CLK) begin
+        if      (RST)                                chk_rslt <= {{(`DATW-`KEYW){1'b1}}, chk_rslt_key};
+        else if (merge_network_doten && check_first) chk_rslt <= chk_rslt + (1<<`E_LOG);
+      end
       assign fifo4odd_din[`DATW*(i+1)-1:`DATW*i]  = fifo4odd_initrecord;
       assign fifo4even_din[`DATW*(i+1)-1:`DATW*i] = fifo4even_initrecord;
+      assign check_records[`DATW*(i+1)-1:`DATW*i] = chk_rslt;
+      assign check_first_records[`DATW*(i+1)-1:`DATW*i] = (i == (1<<`E_LOG)-1) ? {{(`DATW-`KEYW){1'b1}}, check_first_key} : 0;
     end
   endgenerate
 
+  // show result
   always @(posedge CLK) begin
-    if (!fifo4odd_emp && !fifo4even_emp) begin
-      $write("%d %d %d %d %d ", comp_rslt,
-             selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1], selected_records[(`KEYW+`DATW*2)-1:`DATW*2], selected_records[(`KEYW+`DATW*3)-1:`DATW*3]);
-      $write("| %d %d ", fifo4odd_cnt, fifo4even_cnt);
+    if (merge_network_doten) begin
+      case (`E_LOG)
+        1: $write("%d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1]);
+        2: $write("%d %d %d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1], merge_network_dot[(`KEYW+`DATW*2)-1:`DATW*2], merge_network_dot[(`KEYW+`DATW*3)-1:`DATW*3]);
+        3: $write("%d %d %d %d %d %d %d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1], merge_network_dot[(`KEYW+`DATW*2)-1:`DATW*2], merge_network_dot[(`KEYW+`DATW*3)-1:`DATW*3], merge_network_dot[(`KEYW+`DATW*4)-1:`DATW*4], merge_network_dot[(`KEYW+`DATW*5)-1:`DATW*5], merge_network_dot[(`KEYW+`DATW*6)-1:`DATW*6], merge_network_dot[(`KEYW+`DATW*7)-1:`DATW*7]);
+        4: $write("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1], merge_network_dot[(`KEYW+`DATW*2)-1:`DATW*2], merge_network_dot[(`KEYW+`DATW*3)-1:`DATW*3], merge_network_dot[(`KEYW+`DATW*4)-1:`DATW*4], merge_network_dot[(`KEYW+`DATW*5)-1:`DATW*5], merge_network_dot[(`KEYW+`DATW*6)-1:`DATW*6], merge_network_dot[(`KEYW+`DATW*7)-1:`DATW*7], merge_network_dot[(`KEYW+`DATW*8)-1:`DATW*8], merge_network_dot[(`KEYW+`DATW*9)-1:`DATW*9], merge_network_dot[(`KEYW+`DATW*10)-1:`DATW*10], merge_network_dot[(`KEYW+`DATW*11)-1:`DATW*11], merge_network_dot[(`KEYW+`DATW*12)-1:`DATW*12], merge_network_dot[(`KEYW+`DATW*13)-1:`DATW*13], merge_network_dot[(`KEYW+`DATW*14)-1:`DATW*14], merge_network_dot[(`KEYW+`DATW*15)-1:`DATW*15]);
+        5: $write("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1], merge_network_dot[(`KEYW+`DATW*2)-1:`DATW*2], merge_network_dot[(`KEYW+`DATW*3)-1:`DATW*3], merge_network_dot[(`KEYW+`DATW*4)-1:`DATW*4], merge_network_dot[(`KEYW+`DATW*5)-1:`DATW*5], merge_network_dot[(`KEYW+`DATW*6)-1:`DATW*6], merge_network_dot[(`KEYW+`DATW*7)-1:`DATW*7], merge_network_dot[(`KEYW+`DATW*8)-1:`DATW*8], merge_network_dot[(`KEYW+`DATW*9)-1:`DATW*9], merge_network_dot[(`KEYW+`DATW*10)-1:`DATW*10], merge_network_dot[(`KEYW+`DATW*11)-1:`DATW*11], merge_network_dot[(`KEYW+`DATW*12)-1:`DATW*12], merge_network_dot[(`KEYW+`DATW*13)-1:`DATW*13], merge_network_dot[(`KEYW+`DATW*14)-1:`DATW*14], merge_network_dot[(`KEYW+`DATW*15)-1:`DATW*15], merge_network_dot[(`KEYW+`DATW*16)-1:`DATW*16], merge_network_dot[(`KEYW+`DATW*17)-1:`DATW*17], merge_network_dot[(`KEYW+`DATW*18)-1:`DATW*18], merge_network_dot[(`KEYW+`DATW*19)-1:`DATW*19], merge_network_dot[(`KEYW+`DATW*20)-1:`DATW*20], merge_network_dot[(`KEYW+`DATW*21)-1:`DATW*21], merge_network_dot[(`KEYW+`DATW*22)-1:`DATW*22], merge_network_dot[(`KEYW+`DATW*23)-1:`DATW*23], merge_network_dot[(`KEYW+`DATW*24)-1:`DATW*24], merge_network_dot[(`KEYW+`DATW*25)-1:`DATW*25], merge_network_dot[(`KEYW+`DATW*26)-1:`DATW*26], merge_network_dot[(`KEYW+`DATW*27)-1:`DATW*27], merge_network_dot[(`KEYW+`DATW*28)-1:`DATW*28], merge_network_dot[(`KEYW+`DATW*29)-1:`DATW*29], merge_network_dot[(`KEYW+`DATW*30)-1:`DATW*30], merge_network_dot[(`KEYW+`DATW*31)-1:`DATW*31]);
+      endcase
       $write("\n");
       $fflush();
     end
   end
+
+  // error checker
+  always @(posedge CLK) begin
+    if (RST) begin
+      check_first <= 0;
+    end else begin
+      if (merge_network_doten) begin
+        check_first <= 1;
+        if (!check_first) begin
+          if (merge_network_dot != check_first_records) begin $write("\nError!\n"); $finish(); end
+        end else begin
+          if (merge_network_dot != check_records) begin $write("\nError!\n"); $finish(); end
+        end
+      end
+    end
+  end
   
-  // always @(posedge CLK) begin
-  //   if (merge_network_doten) begin
-  //     $write("%d %d %d %d ", merge_network_dot[(`KEYW+`DATW*0)-1:`DATW*0], merge_network_dot[(`KEYW+`DATW*1)-1:`DATW*1], merge_network_dot[(`KEYW+`DATW*2)-1:`DATW*2], merge_network_dot[(`KEYW+`DATW*3)-1:`DATW*3]);
-  //     $write("\n");
-  //     $fflush();
-  //   end
-  // end
-  
+  // simulation finish condition
   reg [31:0] cycle;
   always @(posedge CLK) begin
     if (RST) begin
       cycle <= 0;
     end else begin
       cycle <= cycle + 1;
-      if (cycle >= 30) $finish();
+      if (cycle >= 100) $finish();
     end
   end
-  
     
 endmodule
-
 
 `default_nettype wire
