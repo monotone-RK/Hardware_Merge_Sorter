@@ -11,7 +11,19 @@ module COMPARATOR #(parameter              KEYW = 32)
                     input  wire [KEYW-1:0] DIN1,
                     output wire            RSLT);
   
-  assign RSLT = (DIN0 <= DIN1);
+  assign RSLT = (DIN0 < DIN1);
+  
+endmodule
+
+
+/***** A control logic to detect both keys are equal                      *****/
+/******************************************************************************/
+module EQUAL_DETECTOR #(parameter              KEYW = 32)
+                       (input  wire [KEYW-1:0] DIN0,
+                        input  wire [KEYW-1:0] DIN1,
+                        output wire            RSLT);
+  
+  assign RSLT = (DIN0 == DIN1);
   
 endmodule
 
@@ -243,4 +255,111 @@ module SRL_FIFO #(parameter                    FIFO_SIZE  = 4,   // size in log 
 endmodule
 
 
+/***** A selector logic                                                   *****/
+/******************************************************************************/
+module SELECTOR_LOGIC #(parameter                       E_LOG = 2,
+                        parameter                       DATW  = 64,
+                        parameter                       KEYW  = 32)
+                       (input  wire                     CLK,
+                        input  wire                     RST,
+                        input  wire                     STALL,
+                        input  wire [(DATW<<E_LOG)-1:0] DIN_A,
+                        input  wire                     EMP_A,
+                        input  wire [(DATW<<E_LOG)-1:0] DIN_B,
+                        input  wire                     EMP_B,
+                        output wire                     DEQ_A,
+                        output wire                     DEQ_B,
+                        output wire [(DATW<<E_LOG)-1:0] DOT,
+                        output wire                     DOTEN);
+
+  reg  [(DATW<<E_LOG)-1:0] A0, A1, B0, B1;
+  reg                      A_in, B_in;
+  reg                      init_A_done, init_B_done;
+  reg                      comp_mux_buf;
+  reg                      comp_state;
+  reg                      flip_selector;
+  wire                     deq_A_initbefore, deq_B_initbefore;
+  wire                     deq_A_initafter, deq_B_initafter;
+  wire [(DATW<<E_LOG)-1:0] selected_records;
+  wire                     comp_rslt_A0B1, comp_rslt_A1B0;
+  wire                     is_equal_A0B1, is_equal_A1B0;
+  wire                     comp_mux_out;
+  wire                     is_equal_mux_out;
+
+  assign deq_A_initbefore = ~|{EMP_A,init_A_done};
+  assign deq_B_initbefore = ~|{EMP_B,init_B_done} && init_A_done;
+
+  assign deq_A_initafter = &{(~EMP_A),   comp_mux_buf,  init_B_done, (~STALL)};
+  assign deq_B_initafter = &{(~EMP_B), (~comp_mux_buf), init_B_done, (~STALL)};
+  
+  always @(posedge CLK) begin
+    if (RST) begin
+      A_in        <= 0;
+      B_in        <= 0;
+      init_A_done <= 0;
+      init_B_done <= 0;
+    end else begin
+      if (!A_in)            A_in        <= deq_A_initbefore;
+      if (!B_in)            B_in        <= deq_B_initbefore;
+      if (deq_A_initbefore) init_A_done <= A_in;
+      if (deq_B_initbefore) init_B_done <= B_in;
+    end
+  end
+
+  // Stage 1
+  //////////////////////////////////////////////////////////
+  always @(posedge CLK) if (DEQ_A) A0 <= DIN_A;
+  always @(posedge CLK) if (DEQ_B) B0 <= DIN_B;
+
+  COMPARATOR #(KEYW)
+  comparatorA0B1(A0[KEYW-1:0], B1[KEYW-1:0], comp_rslt_A0B1);
+  COMPARATOR #(KEYW)
+  comparatorA1B0(A1[KEYW-1:0], B0[KEYW-1:0], comp_rslt_A1B0);
+
+  EQUAL_DETECTOR #(KEYW)
+  equal_detectorA0B1(A0[KEYW-1:0], B1[KEYW-1:0], is_equal_A0B1);
+  EQUAL_DETECTOR #(KEYW)
+  equal_detectorA1B0(A1[KEYW-1:0], B0[KEYW-1:0], is_equal_A1B0);
+  
+  MUX2 #(1) mux2_4_comprslt(comp_rslt_A0B1, comp_rslt_A1B0, comp_mux_buf, comp_mux_out);
+  MUX2 #(1) mux2_4_is_equal(is_equal_A0B1, is_equal_A1B0, comp_mux_buf, is_equal_mux_out);
+    
+  // Stage 2
+  //////////////////////////////////////////////////////////
+  always @(posedge CLK) if (DEQ_A) A1 <= A0;
+  always @(posedge CLK) if (DEQ_B) B1 <= B0;
+
+  always @(posedge CLK) begin
+    if (RST) begin
+      comp_mux_buf  <= 0;
+      comp_state    <= 0;
+      flip_selector <= 0;
+    end else begin
+      case (comp_state)
+        0: begin
+          if (B_in && deq_B_initbefore) begin
+            comp_mux_buf <= comp_mux_out;
+            comp_state   <= 1;
+          end
+        end
+        1: begin
+          if (deq_A_initafter || deq_B_initafter) begin
+            if (is_equal_mux_out) begin comp_mux_buf <= flip_selector; flip_selector <= ~flip_selector; end
+            else                  begin comp_mux_buf <= comp_mux_out;                                   end
+          end
+        end
+      endcase
+    end
+  end
+  
+  MUX2 #((DATW<<E_LOG)) mux2_4_record(A1, B1, comp_mux_buf, selected_records);
+
+  // Output
+  assign DEQ_A = deq_A_initbefore || deq_A_initafter;
+  assign DEQ_B = deq_B_initbefore || deq_B_initafter;
+  assign DOT   = selected_records;
+  assign DOTEN = deq_A_initafter || deq_B_initafter;
+  
+endmodule
+  
 `default_nettype wire
