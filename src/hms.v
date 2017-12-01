@@ -164,7 +164,7 @@ module MERGE_NETWORK #(parameter                       E_LOG = 2,
 
   genvar i;
   generate
-    for (i=0; i<(1<<E_LOG)-1; i=i+1) begin: sort_logics
+    for (i=0; i<(1<<E_LOG); i=i+1) begin: sort_logics
       wire [(DATW<<E_LOG)-1:0] din;
       wire                     dinen;
       wire [(DATW<<E_LOG)-1:0] dot;
@@ -175,7 +175,7 @@ module MERGE_NETWORK #(parameter                       E_LOG = 2,
   endgenerate
 
   generate
-    for (i=0; i<(1<<E_LOG)-1; i=i+1) begin: connection
+    for (i=0; i<(1<<E_LOG); i=i+1) begin: connection
       if (i == 0) begin
         assign sort_logics[0].din   = DIN;
         assign sort_logics[0].dinen = DINEN;
@@ -186,9 +186,15 @@ module MERGE_NETWORK #(parameter                       E_LOG = 2,
     end
   endgenerate
 
+  reg init_record_ejected;
+  always @(posedge CLK) begin
+    if      (RST)                             init_record_ejected <= 0;
+    else if (sort_logics[(1<<E_LOG)-1].doten) init_record_ejected <= 1;
+  end
+
   // Output
-  assign DOT   = sort_logics[(1<<E_LOG)-2].dot;
-  assign DOTEN = sort_logics[(1<<E_LOG)-2].doten;
+  assign DOT   = sort_logics[(1<<E_LOG)-1].dot;
+  assign DOTEN = sort_logics[(1<<E_LOG)-1].doten & init_record_ejected;
   
 endmodule
   
@@ -210,8 +216,8 @@ module SRL_FIFO #(parameter                    FIFO_SIZE  = 4,   // size in log 
   reg  [FIFO_SIZE-1:0]  head;
   reg  [FIFO_WIDTH-1:0] mem [(1<<FIFO_SIZE)-1:0];
   
-  assign emp  = (cnt==0);
-  assign full = (cnt==(1<<FIFO_SIZE));
+  assign emp  = (cnt == 0);
+  assign full = (cnt >= (1<<FIFO_SIZE)-1);  // to store this stall signal in a register (note!!!)
   assign dot  = mem[head];
     
   always @(posedge CLK) begin

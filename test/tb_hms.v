@@ -40,9 +40,6 @@ module tb_MERGE_NETWORK();
   wire                       merge_network_doten;
   
   wire [(`DATW<<`E_LOG)-1:0] check_records;
-  reg                        check_first;
-  wire [`KEYW-1:0]           check_first_key = 1;
-  wire [(`DATW<<`E_LOG)-1:0] check_first_records;
   
   assign fifo4odd_enq  = !fifo4odd_ful;
   assign fifo4even_enq = !fifo4even_ful;
@@ -72,7 +69,7 @@ module tb_MERGE_NETWORK();
     for (i=0; i<(1<<`E_LOG); i=i+1) begin: loop
       wire [`KEYW-1:0] init_keyodd  = 2 * i + 1;
       wire [`KEYW-1:0] init_keyeven = 2 * i + 2;
-      wire [`KEYW-1:0] chk_rslt_key = i + 2;
+      wire [`KEYW-1:0] chk_rslt_key = i + 1;
       reg  [`DATW-1:0] fifo4odd_initrecord;
       reg  [`DATW-1:0] fifo4even_initrecord;
       reg  [`DATW-1:0] chk_rslt;
@@ -85,13 +82,12 @@ module tb_MERGE_NETWORK();
         else if (fifo4even_enq) fifo4even_initrecord <= fifo4even_initrecord + (1<<(`E_LOG+1));
       end
       always @(posedge CLK) begin
-        if      (RST)                                chk_rslt <= {{(`DATW-`KEYW){1'b1}}, chk_rslt_key};
-        else if (merge_network_doten && check_first) chk_rslt <= chk_rslt + (1<<`E_LOG);
+        if      (RST)                 chk_rslt <= {{(`DATW-`KEYW){1'b1}}, chk_rslt_key};
+        else if (merge_network_doten) chk_rslt <= chk_rslt + (1<<`E_LOG);
       end
       assign fifo4odd_din[`DATW*(i+1)-1:`DATW*i]  = fifo4odd_initrecord;
       assign fifo4even_din[`DATW*(i+1)-1:`DATW*i] = fifo4even_initrecord;
       assign check_records[`DATW*(i+1)-1:`DATW*i] = chk_rslt;
-      assign check_first_records[`DATW*(i+1)-1:`DATW*i] = (i == (1<<`E_LOG)-1) ? {{(`DATW-`KEYW){1'b1}}, check_first_key} : 0;
     end
   endgenerate
 
@@ -112,16 +108,10 @@ module tb_MERGE_NETWORK();
 
   // error checker
   always @(posedge CLK) begin
-    if (RST) begin
-      check_first <= 0;
-    end else begin
-      if (merge_network_doten) begin
-        check_first <= 1;
-        if (!check_first) begin
-          if (merge_network_dot != check_first_records) begin $write("\nError!\n"); $finish(); end
-        end else begin
-          if (merge_network_dot != check_records) begin $write("\nError!\n"); $finish(); end
-        end
+    if (merge_network_doten) begin
+      if (merge_network_dot != check_records) begin
+        $write("\nError!\n"); 
+        $finish();
       end
     end
   end
