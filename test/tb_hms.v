@@ -10,7 +10,7 @@
 `define DATW  64
 `define KEYW  32
   
-module tb_MERGE_NETWORK();
+module tb_SELECTOR_LOGIC_and_MERGE_NETWORK();
   reg CLK; initial begin CLK=0; forever #50 CLK=~CLK; end
   reg RST; initial begin RST=1; #400 RST=0; end
 
@@ -35,6 +35,7 @@ module tb_MERGE_NETWORK();
 
   wire                       comp_rslt;
   wire [(`DATW<<`E_LOG)-1:0] selected_records;
+  wire                       selected_records_valid;
 
   wire [(`DATW<<`E_LOG)-1:0] merge_network_dot;
   wire                       merge_network_doten;
@@ -44,9 +45,6 @@ module tb_MERGE_NETWORK();
   assign fifo4odd_enq  = !fifo4odd_ful;
   assign fifo4even_enq = !fifo4even_ful;
 
-  assign fifo4odd_deq  = !fifo4odd_emp && !fifo4even_emp &&  comp_rslt;
-  assign fifo4even_deq = !fifo4odd_emp && !fifo4even_emp && ~comp_rslt;
-  
   SRL_FIFO #(4, (`DATW<<`E_LOG))
   fifo4odd(CLK, RST, fifo4odd_enq, fifo4odd_deq, fifo4odd_din, 
            fifo4odd_dot, fifo4odd_emp, fifo4odd_ful, fifo4odd_cnt);
@@ -54,14 +52,23 @@ module tb_MERGE_NETWORK();
   fifo4even(CLK, RST, fifo4even_enq, fifo4even_deq, fifo4even_din, 
             fifo4even_dot, fifo4even_emp, fifo4even_ful, fifo4even_cnt);
   
-  COMPARATOR #(`KEYW)
-  comparator(fifo4odd_dot[`KEYW-1:0], fifo4even_dot[`KEYW-1:0], comp_rslt);
-
-  MUX2 #((`DATW<<`E_LOG))
-  mux2(fifo4odd_dot, fifo4even_dot, comp_rslt, selected_records);
+  // assign selected_records_valid = !fifo4odd_emp && !fifo4even_emp;
   
+  // assign fifo4odd_deq  = selected_records_valid &&  comp_rslt;
+  // assign fifo4even_deq = selected_records_valid && ~comp_rslt;
+  
+  // COMPARATOR #(`KEYW)
+  // comparator(fifo4odd_dot[`KEYW-1:0], fifo4even_dot[`KEYW-1:0], comp_rslt);
+
+  // MUX2 #((`DATW<<`E_LOG))
+  // mux2(fifo4odd_dot, fifo4even_dot, comp_rslt, selected_records);
+
+  SELECTOR_LOGIC #(`E_LOG, `DATW, `KEYW)
+  selector_logic(CLK, RST, 1'b0, fifo4odd_dot, fifo4odd_emp, fifo4even_dot, fifo4even_emp, 
+                 fifo4odd_deq, fifo4even_deq, selected_records, selected_records_valid);
+
   MERGE_NETWORK #(`E_LOG, `DATW, `KEYW)
-  merge_network(CLK, RST, 1'b0, selected_records, (!fifo4odd_emp && !fifo4even_emp), 
+  merge_network(CLK, RST, 1'b0, selected_records, selected_records_valid, 
                 merge_network_dot, merge_network_doten);
   
   genvar i;
@@ -92,6 +99,20 @@ module tb_MERGE_NETWORK();
   endgenerate
 
   // show result
+  // always @(posedge CLK) begin
+  //   if (RST) begin end
+  //   else if (selected_records_valid) begin
+  //     case (`E_LOG)
+  //       1: $write("%d %d ", selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1]);
+  //       2: $write("%d %d %d %d ", selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1], selected_records[(`KEYW+`DATW*2)-1:`DATW*2], selected_records[(`KEYW+`DATW*3)-1:`DATW*3]);
+  //       3: $write("%d %d %d %d %d %d %d %d ", selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1], selected_records[(`KEYW+`DATW*2)-1:`DATW*2], selected_records[(`KEYW+`DATW*3)-1:`DATW*3], selected_records[(`KEYW+`DATW*4)-1:`DATW*4], selected_records[(`KEYW+`DATW*5)-1:`DATW*5], selected_records[(`KEYW+`DATW*6)-1:`DATW*6], selected_records[(`KEYW+`DATW*7)-1:`DATW*7]);
+  //       4: $write("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ", selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1], selected_records[(`KEYW+`DATW*2)-1:`DATW*2], selected_records[(`KEYW+`DATW*3)-1:`DATW*3], selected_records[(`KEYW+`DATW*4)-1:`DATW*4], selected_records[(`KEYW+`DATW*5)-1:`DATW*5], selected_records[(`KEYW+`DATW*6)-1:`DATW*6], selected_records[(`KEYW+`DATW*7)-1:`DATW*7], selected_records[(`KEYW+`DATW*8)-1:`DATW*8], selected_records[(`KEYW+`DATW*9)-1:`DATW*9], selected_records[(`KEYW+`DATW*10)-1:`DATW*10], selected_records[(`KEYW+`DATW*11)-1:`DATW*11], selected_records[(`KEYW+`DATW*12)-1:`DATW*12], selected_records[(`KEYW+`DATW*13)-1:`DATW*13], selected_records[(`KEYW+`DATW*14)-1:`DATW*14], selected_records[(`KEYW+`DATW*15)-1:`DATW*15]);
+  //       5: $write("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d ", selected_records[(`KEYW+`DATW*0)-1:`DATW*0], selected_records[(`KEYW+`DATW*1)-1:`DATW*1], selected_records[(`KEYW+`DATW*2)-1:`DATW*2], selected_records[(`KEYW+`DATW*3)-1:`DATW*3], selected_records[(`KEYW+`DATW*4)-1:`DATW*4], selected_records[(`KEYW+`DATW*5)-1:`DATW*5], selected_records[(`KEYW+`DATW*6)-1:`DATW*6], selected_records[(`KEYW+`DATW*7)-1:`DATW*7], selected_records[(`KEYW+`DATW*8)-1:`DATW*8], selected_records[(`KEYW+`DATW*9)-1:`DATW*9], selected_records[(`KEYW+`DATW*10)-1:`DATW*10], selected_records[(`KEYW+`DATW*11)-1:`DATW*11], selected_records[(`KEYW+`DATW*12)-1:`DATW*12], selected_records[(`KEYW+`DATW*13)-1:`DATW*13], selected_records[(`KEYW+`DATW*14)-1:`DATW*14], selected_records[(`KEYW+`DATW*15)-1:`DATW*15], selected_records[(`KEYW+`DATW*16)-1:`DATW*16], selected_records[(`KEYW+`DATW*17)-1:`DATW*17], selected_records[(`KEYW+`DATW*18)-1:`DATW*18], selected_records[(`KEYW+`DATW*19)-1:`DATW*19], selected_records[(`KEYW+`DATW*20)-1:`DATW*20], selected_records[(`KEYW+`DATW*21)-1:`DATW*21], selected_records[(`KEYW+`DATW*22)-1:`DATW*22], selected_records[(`KEYW+`DATW*23)-1:`DATW*23], selected_records[(`KEYW+`DATW*24)-1:`DATW*24], selected_records[(`KEYW+`DATW*25)-1:`DATW*25], selected_records[(`KEYW+`DATW*26)-1:`DATW*26], selected_records[(`KEYW+`DATW*27)-1:`DATW*27], selected_records[(`KEYW+`DATW*28)-1:`DATW*28], selected_records[(`KEYW+`DATW*29)-1:`DATW*29], selected_records[(`KEYW+`DATW*30)-1:`DATW*30], selected_records[(`KEYW+`DATW*31)-1:`DATW*31]);
+  //     endcase
+  //     $write("\n");
+  //     $fflush();
+  //   end
+  // end
   always @(posedge CLK) begin
     if (merge_network_doten) begin
       case (`E_LOG)
