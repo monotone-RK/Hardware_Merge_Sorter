@@ -206,7 +206,7 @@ module MERGE_NETWORK #(parameter                       E_LOG = 2,
 
   // Output
   assign DOT   = sort_logics[(1<<E_LOG)-1].dot;
-  assign DOTEN = sort_logics[(1<<E_LOG)-1].doten & init_record_ejected;
+  assign DOTEN = &{sort_logics[(1<<E_LOG)-1].doten, init_record_ejected, (~STALL)};
   
 endmodule
   
@@ -229,7 +229,7 @@ module SRL_FIFO #(parameter                    FIFO_SIZE  = 4,   // size in log 
   reg  [FIFO_WIDTH-1:0] mem [(1<<FIFO_SIZE)-1:0];
   
   assign emp  = (cnt == 0);
-  assign full = (cnt >= (1<<FIFO_SIZE)-1);  // to store this stall signal in a register (note!!!)
+  assign full = (cnt == (1<<FIFO_SIZE));
   assign dot  = mem[head];
     
   always @(posedge CLK) begin
@@ -419,4 +419,117 @@ module MERGE_LOGIC #(parameter                       E_LOG = 2,
   
 endmodule
   
+
+/***** A coupler                                                          *****/
+/******************************************************************************/
+module COUPLER #(parameter                           E_LOG = 2,
+                 parameter                           DATW  = 64)
+                (input  wire                         CLK,
+                 input  wire                         RST,
+                 input  wire [(DATW<<(E_LOG-1))-1:0] DIN,
+                 input  wire                         DINEN,
+                 output wire [(DATW<<E_LOG)-1:0]     DOT,
+                 output wire                         DOTEN);
+
+  reg [(DATW<<(E_LOG-1))-1:0] record_buf;    
+  reg                         record_buf_en;
+
+  always @(posedge CLK) begin
+    if (DINEN) record_buf <= DIN;
+  end  
+  always @(posedge CLK) begin
+    if      (RST)   record_buf_en <= 0; 
+    else if (DINEN) record_buf_en <= ~record_buf_en;
+  end
+
+  // Output
+  assign DOT   = {DIN, record_buf};
+  assign DOTEN = DINEN & record_buf_en;
+  
+endmodule
+
+
+/***** A merge node                                                       *****/
+/******************************************************************************/
+module MERGE_NODE #(parameter                           E_LOG = 2,
+                    parameter                           DATW  = 64,
+                    parameter                           KEYW  = 32)
+                   (input  wire                         CLK,
+                    input  wire                         RST,
+                    input  wire                         IN_FULL,
+                    input  wire [(DATW<<(E_LOG-1))-1:0] DIN_A,
+                    input  wire                         DINEN_A,
+                    input  wire [(DATW<<(E_LOG-1))-1:0] DIN_B,
+                    input  wire                         DINEN_B,
+                    output wire                         FUL_A,
+                    output wire                         FUL_B,
+                    output wire [(DATW<<E_LOG)-1:0]     DOT,
+                    output wire                         DOTEN);
+
+  wire [(DATW<<E_LOG)-1:0] coupler_4_A_dot, coupler_4_B_dot;
+  wire                     coupler_4_A_doten, coupler_4_B_doten;
+
+  COUPLER #(E_LOG, DATW)
+  coupler_4_A(CLK, RST, DIN_A, DINEN_A, coupler_4_A_dot, coupler_4_A_doten);
+  COUPLER #(E_LOG, DATW)
+  coupler_4_B(CLK, RST, DIN_B, DINEN_B, coupler_4_B_dot, coupler_4_B_doten);
+  
+  MERGE_LOGIC #(E_LOG, DATW, KEYW)
+  merge_logic(CLK, RST, IN_FULL, coupler_4_A_doten, coupler_4_A_dot, coupler_4_B_doten, coupler_4_B_dot, 
+              FUL_A, FUL_B, DOT, DOTEN);
+
+endmodule
+
+
+/***** A merge tree                                                       *****/
+/******************************************************************************/
+module MERGE_TREE #(parameter                       E_LOG = 2,
+                    parameter                       DATW  = 64,
+                    parameter                       KEYW  = 32)
+                   (input  wire                     CLK,
+                    input  wire                     RST,
+                    input  wire                     IN_FULL,
+                    input  wire [(DATW<<E_LOG)-1:0] DIN,
+                    input  wire [(1<<E_LOG)-1:0]    DINEN,
+                    output wire [(1<<E_LOG)-1:0]    FULL,
+                    output wire [(DATW<<E_LOG)-1:0] DOT,
+                    output wire                     DOTEN);
+
+  genvar i, j;
+  generate
+    for (i=0; i<E_LOG; i=i+1) begin: level
+      wire [(1<<(E_LOG-(i+1)))-1:0] node_in_full;
+      wire [(DATW<<E_LOG)-1:0]      node_din;
+      wire [(1<<(E_LOG-i))-1:0]     node_dinen;
+      wire [(1<<(E_LOG-i))-1:0]     node_full;
+      wire [(DATW<<E_LOG)-1:0]      node_dot;
+      wire [(1<<(E_LOG-(i+1)))-1:0] node_doten;
+      for (j=0; j<(1<<(E_LOG-(i+1))); j=j+1) begin: nodes
+        MERGE_NODE #((i+1), DATW, KEYW)
+        merge_node(CLK, RST, node_in_full[j], node_din[(DATW<<(i))*(2*j+1)-1:(DATW<<(i))*(2*j)], node_dinen[2*j], node_din[(DATW<<(i))*(2*j+2)-1:(DATW<<(i))*(2*j+1)], node_dinen[2*j+1], 
+                   node_full[2*j], node_full[2*j+1], node_dot[(DATW<<(i+1))*(j+1)-1:(DATW<<(i+1))*j], node_doten[j]);
+      end
+    end
+  endgenerate
+  
+  generate
+    for (i=0; i<E_LOG; i=i+1) begin: connection
+      if (i == 0) begin
+        assign level[0].node_din   = DIN;
+        assign level[0].node_dinen = DINEN;
+        assign FULL                = level[0].node_full;
+      end else begin
+        assign level[i].node_din       = level[i-1].node_dot;
+        assign level[i].node_dinen     = level[i-1].node_doten;
+        assign level[i-1].node_in_full = level[i].node_full;
+      end
+    end
+  endgenerate
+
+  assign level[E_LOG-1].node_in_full = IN_FULL;
+  assign DOT                         = level[E_LOG-1].node_dot;
+  assign DOTEN                       = level[E_LOG-1].node_doten;
+
+endmodule
+
 `default_nettype wire
