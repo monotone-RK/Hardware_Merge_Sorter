@@ -362,4 +362,61 @@ module SELECTOR_LOGIC #(parameter                       E_LOG = 2,
   
 endmodule
   
+
+/***** A merge logic                                                      *****/
+/******************************************************************************/
+module MERGE_LOGIC #(parameter                       E_LOG = 2,
+                     parameter                       DATW  = 64,
+                     parameter                       KEYW  = 32)
+                    (input  wire                     CLK,
+                     input  wire                     RST,
+                     input  wire                     IN_FULL,
+                     input  wire                     ENQ_A,
+                     input  wire [(DATW<<E_LOG)-1:0] DIN_A,
+                     input  wire                     ENQ_B,
+                     input  wire [(DATW<<E_LOG)-1:0] DIN_B,
+                     output wire                     FUL_A,
+                     output wire                     FUL_B,
+                     output wire [(DATW<<E_LOG)-1:0] DOT,
+                     output wire                     DOTEN);
+
+  // stall signal
+  reg stall; 
+  always @(posedge CLK) stall <= IN_FULL;
+
+  wire                     fifo_4_regA_deq, fifo_4_regB_deq;
+  wire [(DATW<<E_LOG)-1:0] fifo_4_regA_dot, fifo_4_regB_dot;
+  wire                     fifo_4_regA_emp, fifo_4_regB_emp;
+  wire                     fifo_4_regA_ful, fifo_4_regB_ful;
+  wire [4:0]               fifo_4_regA_cnt, fifo_4_regB_cnt;
+
+  wire [(DATW<<E_LOG)-1:0] selected_records;
+  wire                     selected_records_valid;
+
+  wire [(DATW<<E_LOG)-1:0] merge_network_dot;
+  wire                     merge_network_doten;
+
+  SRL_FIFO #(4, (DATW<<E_LOG))
+  fifo_4_regA(CLK, RST, ENQ_A, fifo_4_regA_deq, DIN_A, 
+              fifo_4_regA_dot, fifo_4_regA_emp, fifo_4_regA_ful, fifo_4_regA_cnt);
+  SRL_FIFO #(4, (DATW<<E_LOG))
+  fifo_4_regB(CLK, RST, ENQ_B, fifo_4_regB_deq, DIN_B, 
+              fifo_4_regB_dot, fifo_4_regB_emp, fifo_4_regB_ful, fifo_4_regB_cnt);
+
+  SELECTOR_LOGIC #(E_LOG, DATW, KEYW)
+  selector_logic(CLK, RST, stall, fifo_4_regA_dot, fifo_4_regA_emp, fifo_4_regB_dot, fifo_4_regB_emp, 
+                 fifo_4_regA_deq, fifo_4_regB_deq, selected_records, selected_records_valid);
+  
+  MERGE_NETWORK #(E_LOG, DATW, KEYW)
+  merge_network(CLK, RST, stall, selected_records, selected_records_valid, 
+                merge_network_dot, merge_network_doten);
+
+  // Output
+  assign FUL_A = fifo_4_regA_ful;
+  assign FUL_B = fifo_4_regB_ful;
+  assign DOT   = merge_network_dot;
+  assign DOTEN = merge_network_doten;
+  
+endmodule
+  
 `default_nettype wire
