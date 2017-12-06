@@ -431,20 +431,22 @@ module COUPLER #(parameter                           E_LOG = 2,
                  output wire [(DATW<<E_LOG)-1:0]     DOT,
                  output wire                         DOTEN);
 
-  reg [(DATW<<(E_LOG-1))-1:0] record_buf;    
-  reg                         record_buf_en;
-
+  reg [(DATW<<E_LOG)-1:0] record_buf;
+  reg                     record_buf_cnt;
+  reg                     record_buf_en;
+  
   always @(posedge CLK) begin
-    if (DINEN) record_buf <= DIN;
-  end  
-  always @(posedge CLK) begin
-    if      (RST)   record_buf_en <= 0; 
-    else if (DINEN) record_buf_en <= ~record_buf_en;
+    if (DINEN) record_buf <= {DIN, record_buf[(DATW<<E_LOG)-1:(DATW<<(E_LOG-1))]};
   end
+  always @(posedge CLK) begin
+    if      (RST)   record_buf_cnt <= 0;
+    else if (DINEN) record_buf_cnt <= ~record_buf_cnt;
+  end
+  always @(posedge CLK) record_buf_en <= &{DINEN, record_buf_cnt};
 
   // Output
-  assign DOT   = {DIN, record_buf};
-  assign DOTEN = DINEN & record_buf_en;
+  assign DOT   = record_buf;
+  assign DOTEN = record_buf_en;
   
 endmodule
 
