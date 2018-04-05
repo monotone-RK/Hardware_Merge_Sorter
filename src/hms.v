@@ -426,11 +426,16 @@ module COUPLER #(parameter                           E_LOG = 2,
                  parameter                           DATW  = 64)
                 (input  wire                         CLK,
                  input  wire                         RST,
+                 input  wire                         IN_FULL,
                  input  wire [(DATW<<(E_LOG-1))-1:0] DIN,
                  input  wire                         DINEN,
                  output wire [(DATW<<E_LOG)-1:0]     DOT,
                  output wire                         DOTEN);
 
+  // stall signal
+  reg stall; 
+  always @(posedge CLK) stall <= IN_FULL;
+  
   reg [(DATW<<E_LOG)-1:0] record_buf;
   reg                     record_buf_cnt;
   reg                     record_buf_en;
@@ -442,11 +447,11 @@ module COUPLER #(parameter                           E_LOG = 2,
     if      (RST)   record_buf_cnt <= 0;
     else if (DINEN) record_buf_cnt <= ~record_buf_cnt;
   end
-  always @(posedge CLK) record_buf_en <= &{DINEN, record_buf_cnt};
+  always @(posedge CLK) if (!stall) record_buf_en <= &{DINEN, record_buf_cnt};
 
   // Output
   assign DOT   = record_buf;
-  assign DOTEN = record_buf_en;
+  assign DOTEN = &{record_buf_en, (~stall)};
   
 endmodule
 
@@ -472,9 +477,9 @@ module MERGE_NODE #(parameter                           E_LOG = 2,
   wire                     coupler_4_A_doten, coupler_4_B_doten;
 
   COUPLER #(E_LOG, DATW)
-  coupler_4_A(CLK, RST, DIN_A, DINEN_A, coupler_4_A_dot, coupler_4_A_doten);
+  coupler_4_A(CLK, RST, FUL_A, DIN_A, DINEN_A, coupler_4_A_dot, coupler_4_A_doten);
   COUPLER #(E_LOG, DATW)
-  coupler_4_B(CLK, RST, DIN_B, DINEN_B, coupler_4_B_dot, coupler_4_B_doten);
+  coupler_4_B(CLK, RST, FUL_B, DIN_B, DINEN_B, coupler_4_B_dot, coupler_4_B_doten);
   
   MERGE_LOGIC #(E_LOG, DATW, KEYW)
   merge_logic(CLK, RST, IN_FULL, coupler_4_A_doten, coupler_4_A_dot, coupler_4_B_doten, coupler_4_B_dot, 
